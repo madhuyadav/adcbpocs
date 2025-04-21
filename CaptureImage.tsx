@@ -13,9 +13,13 @@ import {
 import {Camera, useCameraDevices, PhotoFile} from 'react-native-vision-camera';
 import ImageEditor from '@react-native-community/image-editor';
 import ImageResizer from 'react-native-image-resizer';
+import {EdgeInsets, useSafeAreaInsets} from 'react-native-safe-area-context';
+import MlkitOcr from 'react-native-mlkit-ocr';
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
 const CaptureImage = () => {
+  const insets = useSafeAreaInsets();
+  const styles = makeStyles(insets);
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const [cameraPosition, setCameraPosition] = useState('Capture Card Front');
@@ -68,6 +72,7 @@ const CaptureImage = () => {
       const originalPath =
         Platform.OS === 'android' ? 'file://' + photo.path : photo.path;
 
+      recognizeText(originalPath ?? originalPath);
       const imageWidth = photo.width!;
       const imageHeight = photo.height!;
       console.log(' Original size:', imageWidth, imageHeight);
@@ -106,8 +111,11 @@ const CaptureImage = () => {
       const cropHeight = Math.round(previewLayout.height * scaleY);
 
       const cropData = {
-        offset: {x: cropX, y: cropY}, // Adjust y offset for aspect ratio
-        size: {width: cropWidth, height: cropHeight * 3.2}, // Adjust height for aspect ratio
+        offset: {x: cropX, y: cropY},
+        size: {
+          width: cropWidth,
+          height: cropHeight * (Platform.OS === 'android' ? 3.1 : 2.8),
+        },
         displaySize: {
           width: Math.floor(previewLayout.width),
           height: Math.floor(previewLayout.height),
@@ -125,12 +133,66 @@ const CaptureImage = () => {
       setCameraPosition(
         flipped.current ? 'Capture Card Back' : 'Capture Card Front',
       );
+
       setCapturedPhotoUri(croppedImageUri.uri ?? croppedImageUri); // handles string vs object format
     } catch (error) {
       console.error(' Error capturing or cropping image:', error);
     }
   };
+  const recognizeText = async (imageUri: string) => {
+    try {
+      const result = await MlkitOcr.detectFromUri(imageUri);
+      console.log('Recognized Text:', result);
+      const issuingDateText = result.find(item =>
+        item.text.toLowerCase().includes('issuing date'),
+      );
+      const expiryDateText = result.find(item =>
+        item.text.toLowerCase().includes('expiry date'),
+      );
 
+      const emiratesIdText = result.find(item =>
+        item.text.toLowerCase().includes('id number'),
+      );
+
+      if (issuingDateText) {
+        const dateMatch = issuingDateText.text.match(/\d{2}\/\d{2}\/\d{4}/);
+        if (dateMatch) {
+          const issuingDate = dateMatch[0];
+          console.log('📅 Issuing Date:', issuingDate);
+        } else {
+          console.log('Date not found in:', issuingDateText.text);
+        }
+      }
+      if (expiryDateText) {
+        const dateMatch = expiryDateText.text.match(/\d{2}\/\d{2}\/\d{4}/);
+        if (dateMatch) {
+          const expityDate = dateMatch[0];
+          console.log('📅 Exipry Date:', expityDate);
+        } else {
+          console.log('Date not found in:', expiryDateText.text);
+        }
+      }
+      if (emiratesIdText) {
+        const emiratesIdMatch = emiratesIdText.text.match(
+          /\d{3}-\d{4}-\d{7}-\d{1}/,
+        );
+        if (emiratesIdMatch) {
+          const emiratesId = emiratesIdMatch[0];
+          console.log('📅 Issuing Date:', emiratesId);
+        } else {
+          console.log('Date not found in:', emiratesIdText.text);
+        }
+      }
+    } catch (error) {
+      console.error('Native error:', error); // Check if the error is thrown from the native module
+      if (error instanceof Error) {
+        console.error('Message:', error.message);
+        console.error('Stack trace:', error.stack);
+      } else {
+        console.error('Unknown error:', error);
+      }
+    }
+  };
   return (
     <View style={styles.container}>
       <View
@@ -174,16 +236,17 @@ const CaptureImage = () => {
           />
         )}
       </View>
-
-      <TouchableOpacity
-        onPress={takePhoto}
-        style={[
-          styles.captureButton,
-          !previewLayout && {backgroundColor: '#aaa'},
-        ]}
-        disabled={!previewLayout}>
-        <Text style={styles.captureButtonText}>Take a Photo</Text>
-      </TouchableOpacity>
+      <View>
+        <TouchableOpacity
+          onPress={takePhoto}
+          style={[
+            styles.captureButton,
+            !previewLayout && {backgroundColor: '#aaa'},
+          ]}
+          disabled={!previewLayout}>
+          <Text style={styles.captureButtonText}>Take a Photo</Text>
+        </TouchableOpacity>
+      </View>
 
       {capturedPhotoUri && (
         <View style={styles.previewContainer}>
@@ -222,52 +285,55 @@ const CaptureImage = () => {
 
 export default memo(CaptureImage);
 
-const styles = StyleSheet.create({
-  container: {
-    padding: 10,
-    flex: 1,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  card: {
-    top: '1%',
-    width: '100%',
-    height: '30%',
-    borderRadius: 5,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowOffset: {width: 0, height: 4},
-    shadowRadius: 6,
-  },
-  camera: {
-    flex: 1,
-  },
-  captureButton: {
-    marginTop: 24,
-    backgroundColor: 'red',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  captureButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-  previewContainer: {
-    alignItems: 'center',
-    paddingHorizontal: 10,
-  },
-  previewLabel: {
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  image: {
-    width: 50,
-    height: 50,
-    backfaceVisibility: 'hidden',
-  },
-});
+const makeStyles = (insets: EdgeInsets) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#ffffff',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+    },
+    card: {
+      top: insets.top + 30,
+      bottom: insets.bottom,
+      left: insets.left,
+      right: insets.right,
+      width: '100%',
+      height: '30%',
+      borderRadius: 5,
+      overflow: 'hidden',
+      backgroundColor: '#000',
+      elevation: 5,
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowOffset: {width: 0, height: 4},
+      shadowRadius: 6,
+    },
+    camera: {
+      flex: 1,
+    },
+    captureButton: {
+      backgroundColor: 'red',
+      paddingHorizontal: 30,
+      paddingVertical: 12,
+      borderRadius: 10,
+      marginBottom: 20,
+    },
+    captureButtonText: {
+      color: '#fff',
+      fontSize: 16,
+    },
+    previewContainer: {
+      paddingHorizontal: 10,
+    },
+    previewLabel: {
+      fontWeight: 'bold',
+      marginBottom: 5,
+    },
+    image: {
+      width: 50,
+      height: 50,
+      backfaceVisibility: 'hidden',
+    },
+  });
